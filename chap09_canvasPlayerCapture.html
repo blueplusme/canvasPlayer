@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>#9 canvasPlayerCapture</title>
+    <style type="text/css">
+
+        body, html{
+            margin: 0; padding: 0; width: 100%; height: 100%; border:0; background: #222222;
+        }
+
+        .drop_item{
+            margin: 0; padding: 0; width: 100%; height: 100%; background: #222222;
+            text-align: center;
+        }
+
+        .canvas_item{
+            display: block;
+        }
+
+        .video_item{
+            display: none;
+        }
+
+    </style>
+    <script type="text/javascript">
+
+        function init()
+        {
+            // file drop
+            initDroparea();
+
+            // canvas
+            initCanvas();
+
+            // video
+            initVideo();
+
+            // video event
+            addVideoEvent();
+
+            // keyboard event
+            addKeyEvent()
+
+            // controlbar
+            initControlBar();
+        }
+
+
+        var cavnas, context, canvasW=400, canvasH=400,
+            video, isVideo, videoW, videoH, videoRatio, videoTotalTime,
+            seekDist = 2, volumeDist = 0.1, speedDist = 0.1;
+
+
+        // CANVAS
+        function initCanvas()
+        {
+            canvas = document.getElementById('canvas');
+            context = canvas.getContext('2d');
+
+            canvas.width = canvasW;
+            canvas.height = canvasH;
+        }
+
+
+
+        // VIDEO
+        function initVideo()
+        {
+            video = document.getElementById('video');
+
+            video.width = 400;
+            video.height = 250;
+        }
+
+        function loadVideo(name, path)
+        {
+            document.title = name;
+
+            // 저장 파일명
+            resetSaveInfo( name );
+
+            video.src = path;
+            video.load();
+        }
+
+        function addVideoEvent()
+        {
+            video.addEventListener( 'loadedmetadata', onLoadedVideo );
+            window.addEventListener( 'resize', updateVideoSize );
+        }
+
+        function onLoadedVideo()
+        {
+            isVideo = true;
+
+            videoW = video.videoWidth;
+            videoH = video.videoHeight;
+            videoRatio = videoW / videoH;
+
+            videoTotalTime = video.duration;
+
+            updateVideoSize();
+            resetRepeat();
+            startTimer();
+
+            video.play();
+        }
+
+        function updateVideoSize()
+        {
+            if ( !isVideo )
+                return;
+
+            var dw = document.body.clientWidth,
+                    dh = document.body.clientHeight,
+                    vw = dw,
+                    vh = parseInt( vw / videoRatio );
+
+            canvasW = vw;
+            canvasH = vh;
+            canvas.width = vw;
+            canvas.height = vh;
+
+
+            // controlbar
+            if ( controlbar )
+                controlbar.updatePosition();
+
+            // crop
+            resetCropInfo();
+        }
+
+
+        // EVENT
+        function addKeyEvent()
+        {
+            window.addEventListener( 'keyup', onKeyupEvent );
+        }
+
+        function onKeyupEvent(ke)
+        {
+            if ( !isVideo )
+                return;
+
+            var keyCode = ke.keyCode;
+
+
+            // Filter 0 : 48 ~ 9 : 57
+            if ( keyCode >= 48 && keyCode <= 55 )
+            {
+                setFilter( keyCode - 49 );
+                return;
+            }
+
+            // Video Control
+            switch(keyCode)
+            {
+                case 32: toggleVideo(); break; // space bar
+                case 37: seekVideo(-1); break; // left
+                case 39: seekVideo(1); break; // right
+                case 38: updateVolume(1); break; // up
+                case 40: updateVolume(-1); break; // down
+
+                case 188: speedUp(-1); break; // <
+                case 190: speedUp(1); break; // >
+                case 191: speedUp(0); break; // ?
+
+                case 219: setRepeat(false); break; // [
+                case 221: setRepeat(true); break; // ]
+                case 220: resetRepeat(); break; // \
+            }
+        }
+
+
+
+        // VIDEO CONTROL
+        function toggleVideo()
+        {
+            if (video.paused)
+                video.play();
+            else
+                video.pause();
+        }
+
+        function seekVideo(dir)
+        {
+            resetRepeat();
+
+            var seekTime = video.currentTime + seekDist * dir;
+            seekTime = Math.min( videoTotalTime, Math.max( 0, seekTime ) );
+
+            video.currentTime = seekTime;
+        }
+
+        function updateVolume(dir)
+        {
+            var volume = video.volume + volumeDist * dir;
+            volume = Math.min( 1, Math.max( 0, volume ) );
+
+            video.volume = volume;
+        }
+
+        function speedUp(dir)
+        {
+            var speed = 1;
+            if ( dir != 0 )
+            {
+                speed = video.playbackRate + speedDist * dir;
+                speed = Math.min( 3.9, Math.max( 0.5, speed ) );
+            }
+
+            video.playbackRate = speed;
+        }
+
+
+
+
+
+        // TIMER
+        var videoTimer;
+        function startTimer()
+        {
+            videoTimer = requestAnimationFrame( progressTimer );
+        }
+
+        function stopTimer()
+        {
+            if ( videoTimer )
+                cancelAnimationFrame( videoTimer );
+        }
+
+        function progressTimer()
+        {
+            checkRepeat();
+
+            if ( controlbar )
+                controlbar.updateTime( video.currentTime );
+
+            draw();
+
+            videoTimer = requestAnimationFrame(progressTimer);
+        }
+
+
+
+
+        // repeat
+        var repeatInfo = {start:-1, end:-1, ratioStart:0, ratioEnd:0,
+            isRepeat: function(){
+                return (repeatInfo.start!= -1 && repeatInfo.start < repeatInfo.end);
+            }
+        };
+        function setRepeat(isEnd)
+        {
+            var videoTime = video.currentTime;
+            if ( isEnd )
+            {
+                repeatInfo.end = videoTime;
+                repeatInfo.ratioEnd = videoTime / videoTotalTime;
+
+                if ( repeatInfo.isRepeat() )
+                {
+                    startRepeat();
+                }
+            }
+            else
+            {
+                repeatInfo.start = videoTime;
+                repeatInfo.ratioStart = videoTime / videoTotalTime;
+            }
+        }
+
+        function resetRepeat()
+        {
+            repeatInfo.start = -1;
+            repeatInfo.end = -1;
+            repeatInfo.ratioStart = 0;
+            repeatInfo.ratioEnd = 0;
+        }
+
+        function startRepeat()
+        {
+            video.currentTime = repeatInfo.start;
+        }
+
+        function checkRepeat()
+        {
+            if ( repeatInfo.isRepeat() )
+            {
+                if ( video.currentTime > repeatInfo.end )
+                    video.currentTime = repeatInfo.start;
+            }
+        }
+
+
+
+
+
+        // FILE
+        function initDroparea()
+        {
+            droparea = document.getElementById('droparea')
+            droparea.addEventListener('dragover', onMouseDrag);
+            droparea.addEventListener('drop', onMouseDrop);
+        }
+
+        // file drag, drop
+        function onMouseDrag(me)
+        {
+            me.preventDefault();
+        }
+
+        function onMouseDrop(me)
+        {
+            onMouseDrag(me);
+            checkDropFile(me);
+        }
+
+        function checkDropFile(me)
+        {
+            var files = me.target.files || me.dataTransfer.files;
+            if ( !files || files.length < 1 )
+                return;
+
+            var file = files[0];
+            if ( file.type != 'video/mp4' )
+                return;
+
+            var path = URL.createObjectURL( file );
+
+            loadVideo(file.name, path);
+        }
+
+
+
+
+
+
+
+
+
+
+        //===============================================
+        //  Chap 5
+        //===============================================
+        function draw(isCapture)
+        {
+            context.clearRect( 0, 0, canvasW, canvasH );
+
+            if ( isVideo )
+            {
+                drawVideoImage();
+
+                if ( controlbar && isMouseOver && !isCapture )
+                    controlbar.draw();
+            }
+        }
+
+        function drawVideoImage()
+        {
+            //context.drawImage( video, 100, 100 );
+            //context.drawImage( video, 200, 200, 400, 400, 0, 0, 200, 200 );
+            context.drawImage( video, 0, 0, canvasW, canvasH );
+
+
+            // Crop
+            if ( cropInfo && cropInfo.isArea() )
+            {
+                bufferData = context.getImageData( cropInfo.x, cropInfo.y, cropInfo.w, cropInfo.h );
+
+                if ( filter )
+                    filter( bufferData.data, bufferData.data );
+
+
+                context.clearRect( 0, 0, canvasW, canvasH );
+                context.putImageData( bufferData, cropInfo.x, cropInfo.y );
+            }
+            else
+            {
+                if ( filter )
+                {
+                    bufferData = context.getImageData( 0, 0, canvasW, canvasH );
+                    filter( bufferData.data, bufferData.data );
+                    context.putImageData( bufferData, 0, 0 );
+                }
+            }
+
+        }
+
+
+        var controlbar, isMouseOver = false;
+        function initControlBar()
+        {
+            controlbar = new ControlBar();
+
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mouseover', onMouseOver);
+            canvas.addEventListener('mouseleave', onMouseLeave);
+        }
+
+        // MOUSE EVENT
+        function onMouseDown(me)
+        {
+            var px = me.clientX, py = me.clientY;
+
+            if ( controlbar && py >= controlbar.y )
+            {
+                var seekRatio = controlbar.getRatio( px );
+                seekVideoByRatio( seekRatio );
+
+                return;
+            }
+
+            //crop
+            if ( me.altKey )
+            {
+                cropInfo.isPause = video.paused;
+                video.pause();
+
+                cropInfo.addStart( me.clientX, me.clientY );
+
+                canvas.addEventListener( 'mousemove', onMouseMove );
+                canvas.addEventListener( 'mouseup', onMouseUp );
+
+                return;
+            }
+
+
+            if ( isVideo )
+            {
+                captureVideo();
+            }
+
+        }
+
+        function onMouseOver(me)
+        {
+            isMouseOver = true;
+        }
+
+        function onMouseLeave(me)
+        {
+            isMouseOver = false;
+        }
+
+
+        function seekVideoByRatio(ratio)
+        {
+            resetRepeat();
+
+            var seekTime = videoTotalTime * ratio;
+            seekTime = Math.min( videoTotalTime, Math.max( 0, seekTime ) );
+
+            video.currentTime = seekTime;
+        }
+
+        function ControlBar() {
+            this.margin = 20,
+            this.x = this.margin, this.y, this.w, this.h = 20,
+            this.color_back = 'rgba(50, 50, 50, 0.3)',
+            this.color_progress = 'rgba(150, 255, 255, 0.5)',
+            this.color_repeat = 'rgba(200, 0, 0, 0.5)',
+            this.ratio, this.progressW;
+        }
+
+        var cp = ControlBar.prototype;
+        cp.updatePosition = function()
+        {
+            this.y = canvasH - (this.margin + this.h);
+            this.w = canvasW - (this.margin * 2);
+
+            this.draw();
+        }
+
+        cp.updateTime = function(time)
+        {
+            this.ratio = time / videoTotalTime;
+            this.progressW = this.ratio * this.w;
+
+            this.draw();
+        }
+
+        cp.getRatio = function(px)
+        {
+            var r = ( ( px - this.margin ) / this.w );
+            r = Math.min( 1, Math.max( 0, r ) );
+
+            return r;
+        }
+
+        cp.draw = function()
+        {
+            var x = this.x, y = this.y, w = this.w, h = this.h;
+
+            drawRect( x, y, w, h, this.color_back );
+            drawRect( x, y, this.progressW, h, this.color_progress );
+
+            if ( repeatInfo.start > 0 )
+            {
+                var repeatX = x + repeatInfo.ratioStart * w;
+                var repeatEnd = x + this.progressW;
+                if ( repeatInfo.end > 0 )
+                {
+                    repeatEnd = x + repeatInfo.ratioEnd * w;
+                }
+
+                drawRect( repeatX, y, repeatEnd - repeatX, h, this.color_repeat );
+            }
+        }
+
+
+        function drawRect(x, y, w, h, c)
+        {
+            context.fillStyle = c;
+            context.fillRect( x, y, w, h );
+        }
+
+
+
+
+
+
+
+
+
+        //===============================================
+        //  Chap 7 - crop
+        //===============================================
+        var cropInfo = {
+            sx:0, sy:0, x:0, y:0, w:0, h:0, isPause:false,
+            isArea: function()
+            {
+                return ( this.w > 0 && this.h > 0 );
+            },
+            addStart: function(px, py)
+            {
+                resetCropInfo();
+
+                this.sx = this.x = px;
+                this.sy = this.y = py;
+            },
+            addEnd: function(px, py)
+            {
+                this.w = Math.abs( this.sx - px );
+                this.h = Math.abs( this.sy - py );
+
+                this.x = Math.min( this.sx, px );
+                this.y = Math.min( this.sy, py );
+            }
+        };
+
+        function resetCropInfo()
+        {
+            cropInfo.sx = cropInfo.sy = cropInfo.x = cropInfo.y = cropInfo.w = cropInfo.h = 0;
+        }
+
+
+        function onMouseMove(me)
+        {
+            cropInfo.addEnd( me.clientX, me.clientY );
+        }
+
+        function onMouseUp(me)
+        {
+            isCrop = false;
+
+            if ( !cropInfo.isPause )
+                toggleVideo();
+
+            canvas.removeEventListener( 'mousemove', onMouseMove );
+            canvas.removeEventListener( 'mouseup', onMouseUp );
+        }
+
+
+
+
+
+
+
+
+
+        //===============================================
+        //  Chap 7 - filter
+        //===============================================
+        var filter, filterList = [fChannelRed, fChannelGreen, fChannelBlue,
+            fBright, fInvert, fGrayscale, fMosic];
+
+        function setFilter(index)
+        {
+            if ( index == -1 )
+                filter = null;
+            else
+                filter = filterList[ index ];
+        }
+
+        // 소스 이미지데이터, 변경 이미지 데이터
+
+
+        // 채널 강조
+        function fChannelRed( src, dest )
+        {
+            var i, len = src.length;
+            for ( i = 0; i < len; i+=4 )
+                dest[i] = src[i] + 100;
+        }
+        function fChannelGreen( src, dest )
+        {
+            var i, len = src.length;
+            for ( i = 0; i < len; i+=4 )
+                dest[i+1] = src[i+1] + 100;
+        }
+        function fChannelBlue( src, dest )
+        {
+            var i, len = src.length;
+            for ( i = 0; i < len; i+=4 )
+                dest[i+2] = src[i+2] + 100;
+        }
+
+        // 밝기 강조
+        function fBright( src, dest )
+        {
+            var i, len = src.length, value = 50;
+            for ( i = 0; i < len; i+=4 )
+            {
+                dest[i  ] = src[i  ] + value;
+                dest[i+1] = src[i+1] + value;
+                dest[i+2] = src[i+2] + value;
+            }
+        }
+
+        // 반전
+        function fInvert( src, dest )
+        {
+            var i, len = src.length;
+            for ( i = 0; i < len; i+=4 )
+            {
+                dest[i  ] = 255 - src[i  ];
+                dest[i+1] = 255 - src[i+1];
+                dest[i+2] = 255 - src[i+2];
+            }
+        }
+
+        // grayscale
+        function fGrayscale( src, dest )
+        {
+            var i, len = src.length, v, r, g, b;
+            for ( i = 0; i < len; i+=4 )
+            {
+                r = src[i  ];
+                g = src[i+1];
+                b = src[i+2];
+
+                v = 0.21 * r + 0.71 * g + 0.07 * b;
+                dest[i  ] = v;
+                dest[i+1] = v;
+                dest[i+2] = v;
+            }
+        }
+
+        var indexBuffer = [];
+        // 모자이크
+        function fMosic( src, dest )
+        {
+            var i, len=src.length, tIdx, value = 10;
+
+            if ( indexBuffer.length != len )
+            {
+                var indexW = canvasW;
+                if ( cropInfo.isArea() )
+                    indexW = cropInfo.w;
+
+                indexBuffer = getIndexBuffer( len, value, indexW );
+            }
+
+            for ( i=0; i<len; i+=4 )
+            {
+                tIdx = indexBuffer[parseInt(i/4)] * 4;
+
+                dest[i  ] = src[tIdx  ];
+                dest[i+1] = src[tIdx+1];
+                dest[i+2] = src[tIdx+2];
+            }
+        }
+
+        function getIndexBuffer(len, v, w)
+        {
+            var i, buffer = new Array(len);
+            for ( i=0; i<len; i++ )
+            {
+                buffer[i] = getIJ2M( i, v, w );
+            }
+            return buffer;
+        }
+
+        function getIJ2M(n, v, w)
+        {
+            var i = parseInt( ( n % w ) / v );
+            var j = parseInt( parseInt( n / w ) / v );
+
+            var m = i * v + ( j * w * v );
+
+            return m;
+        }
+
+
+
+
+
+
+
+        //===============================================
+        //  Chap 9 - capture
+        //===============================================
+        // SAVE FILE
+        var imageFormatList = ['.png', '.jpeg'],
+                imageDataFormatList = ["image/png", "image/jpeg"],
+                imageDataStream = 'image/octet-stream',
+                saveFormatIndex = 0,
+                saveLink, saveCount = 0, saveName, offCanvas, offContext;
+        function resetSaveInfo(title)
+        {
+            var timestamp = "__" + parseInt( Date.now() / 1000 ) + "__";
+            saveName = title.replace(".mp4", timestamp);
+        }
+
+        function captureVideo()
+        {
+            var format = imageFormatList[ saveFormatIndex ];
+            var dataForamt = imageDataFormatList[ saveFormatIndex ];
+
+            var isPause = video.paused;
+            if ( !isPause )
+                toggleVideo();
+
+
+            draw( true );
+
+            //===============================================   #91
+            // 1. getImageData
+            // todo
+
+
+
+            //===============================================   #92
+            // 2. convert Data
+
+
+
+            //===============================================   #93
+            // 3. file link
+
+
+            // 4. dispatch event
+
+
+
+            if ( !isPause )
+                toggleVideo();
+        }
+
+        function n2d(n, m)
+        {
+            return ('00000000' + n).substr(-m);
+        }
+
+
+
+
+
+        window.onload = init;
+
+    </script>
+
+</head>
+<body>
+
+<div id="droparea" class="drop_item">
+    <video class="video_item" id="video"></video>
+    <canvas class="canvas_item" id="canvas"></canvas>
+</div>
+
+</body>
+</html>

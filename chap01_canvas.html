@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>#1 canvas</title>
+    <style type="text/css">
+        .canvas_item{
+            border: 1px solid #090;
+        }
+    </style>
+    <script type="text/javascript">
+
+        function init()
+        {
+            initCanvas();
+
+            // line
+            drawLine();
+
+            // rect
+            strokeRect();
+            fillRect();
+
+            // circle
+            drawCircle();
+
+            // text
+            drawText();
+        }
+
+
+
+        //===============================================  #1
+        var canvas, context, canvasW=400, canvasH=400;
+        function initCanvas()
+        {
+            canvas = document.getElementById('canvas');
+
+            console.log(canvas);
+            context = canvas.getContext('2d');
+
+            context.shadowColor = '#990000';
+
+            console.log(context);
+
+
+        }
+
+
+        //===============================================  #2
+        function drawLine()
+        {
+
+        }
+
+
+        //===============================================  #3
+        function strokeRect(){
+
+        }
+
+        function fillRect(){
+
+        }
+
+
+        //===============================================  #4
+        var PI = Math.PI / 180, RAD_360 = PI * 360;
+        function drawCircle(){
+
+        }
+
+
+        //===============================================  #5
+        function drawText()
+        {
+
+        }
+
+
+        window.onload = init;
+
+    </script>
+
+</head>
+<body>
+    <div>
+        <canvas id="canvas" class="canvas_item"></canvas>
+    </div>
+</body>
+</html>
